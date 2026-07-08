@@ -81,4 +81,8 @@ combo_t key_combos[] = {
     COMBO(my_F2, KC_F2),
     COMBO(my_capsword, CW_TOGG),
 };
+
+bool get_combo_must_tap(uint16_t index, combo_t *combo) {
+    return true;
+}
 #endif

@@ -48,5 +48,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define COMBO_COUNT 2          // コンボの数
 #define COMBO_TERM 200           // 同時押しとみなす時間（ms）
+#define COMBO_MUST_TAP_PER_COMBO   // LT()キーを含むコンボに必要
 
 #define KEYBALL_SCROLLSNAP_ENABLE 2
