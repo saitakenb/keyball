@@ -49,8 +49,8 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
   [3] = LAYOUT_universal(
     RGB_TOG, KC_TRNS, KC_TRNS, KC_MPRV, KC_MPLY, KC_MNXT,                               RGB_M_P, RGB_M_B, RGB_M_R, KC_TRNS, KC_TRNS, KC_TRNS,
     RGB_MOD, RGB_HUI, RGB_SAI, RGB_VAI, KC_VOLD, KC_VOLU,                               KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS,
-    RGB_RMOD,RGB_HUD, RGB_SAD, RGB_VAD, KC_BRID, KC_BRIU,                               KC_5,    KC_3,    KC_2,    KC_4,     KC_1,     KC_0,
-    KC_TRNS, KC_TRNS, KC_9,    KC_8,    KC_7,    KC_6,    KC_TRNS,             KC_TRNS, KC_F13,  KC_F14,  KC_F15,  KC_TRNS,  EE_CLR,   QK_RBT,
+    RGB_RMOD,RGB_HUD, RGB_SAD, RGB_VAD, KC_BRID, KC_BRIU,                               CPI_D1K, CPI_D100, CPI_I100, CPI_I1K,  KBC_SAVE, KBC_RST,
+    KC_TRNS, KC_TRNS, SCRL_DVD, SCRL_DVI, SCRL_MO, SCRL_TO, KC_TRNS,             KC_TRNS, KC_F13,  KC_F14,  KC_F15,  KC_TRNS,  EE_CLR,   QK_RBT,
     KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS,             KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS,  KC_TRNS,  QK_BOOT
   ),
 };
