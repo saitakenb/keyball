@@ -44,6 +44,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //#define AUTO_MOUSE_DEFAULT_LAYER 2
 
 #define COMBO_COUNT 2          // コンボの数
-#define COMBO_TERM 100           // 同時押しとみなす時間（ms）
+#define COMBO_TERM 200           // 同時押しとみなす時間（ms）
 
 #define KEYBALL_SCROLLSNAP_ENABLE 2
