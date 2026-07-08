@@ -1,0 +1,21 @@
+name: Build takeshi firmware
+
+on:
+  push:
+    paths:
+      - 'qmk_firmware/keyboards/keyball/**.mk'
+      - 'qmk_firmware/keyboards/keyball/**.c'
+      - 'qmk_firmware/keyboards/keyball/**.h'
+      - 'qmk_firmware/keyboards/keyball/**.json'
+      - '.github/**.yml'
+    branches:
+      - '*'
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    uses: ./.github/workflows/build-firmware.yml
+    with:
+      qmk_version: '0.22.14'
+      keyboard: 'keyball61'
+      keymap: 'takeshi'
