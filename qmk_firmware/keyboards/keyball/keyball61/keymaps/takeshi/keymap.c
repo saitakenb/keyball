@@ -42,7 +42,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
     KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS,                               KC_TRNS,       KC_TRNS,       KC_TRNS,       KC_TRNS,       KC_TRNS,       KC_PSCR,
     KC_TRNS, KC_F1,   KC_F2,   KC_F3,   KC_F4,   KC_F5,                                 LCTL(KC_HOME), LCTL(KC_PGUP), LCTL(KC_UP),   LCTL(KC_PGDN), C(S(KC_TAB)),  CW_TOGG,
     KC_TRNS, KC_F6,   KC_F7,   KC_F8,   KC_F9,   KC_F10,                                LCTL(KC_END),  LCTL(KC_LEFT), LCTL(KC_DOWN), LCTL(KC_RGHT), LCTL(KC_TAB),  KC_GRV,
-    KC_TRNS, KC_BTN2, KC_BTN3, OSL(3),  KC_F12,  KC_F11,  KC_TRNS,             KC_INS,  KC_TRNS,       KC_BTN4,       OSL(3),        KC_BTN5,       KC_LALT,       KC_PAUS,
+    KC_TRNS, KC_BTN2, KC_BTN3, MO(3),  KC_F12,  KC_F11,  KC_TRNS,             KC_INS,  KC_TRNS,       KC_BTN4,       MO(3),        KC_BTN5,       KC_LALT,       KC_PAUS,
     KC_TRNS, TO(0),   KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS,             KC_TRNS, KC_TRNS,       KC_TRNS,       KC_TRNS,       KC_TRNS,       KC_TRNS,       KC_TRNS
   ),
 
@@ -52,6 +52,14 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
     RGB_RMOD,RGB_HUD, RGB_SAD, RGB_VAD, KC_BRID, KC_BRIU,                               CPI_D1K, CPI_D100, CPI_I100, CPI_I1K,  KBC_SAVE, KBC_RST,
     KC_TRNS, KC_TRNS, SCRL_DVD, SCRL_DVI, SCRL_MO, SCRL_TO, KC_TRNS,             KC_TRNS, KC_F13,  KC_F14,  KC_F15,  KC_TRNS,  EE_CLR,   QK_RBT,
     KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS,             KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS,  KC_TRNS,  QK_BOOT
+  ),
+
+  [4] = LAYOUT_universal(
+    KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS,                               KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS,
+    KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS,                               KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS,
+    KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS,                               KC_TRNS, KC_BTN1, KC_BTN3, KC_BTN2, KC_TRNS, KC_TRNS,
+    KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS,             KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS,
+    KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS,             KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS
   ),
 };
 // clang-format on
