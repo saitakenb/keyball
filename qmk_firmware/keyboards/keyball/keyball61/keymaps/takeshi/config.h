@@ -35,10 +35,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define NO_ACTION_MACRO
 #define NO_ACTION_FUNCTION
-#define NO_ACTION_ONESHOT
 
 #undef LOCKING_SUPPORT_ENABLE
 #undef LOCKING_RESYNC_ENABLE
+
+#define DYNAMIC_KEYMAP_LAYER_COUNT 5
 
 #define TAP_CODE_DELAY 5
 //#define TAPPING_TERM 200  // 全体のデフォルトは少し長めでもOK
@@ -46,10 +47,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //#define PRECISION_ENABLE // 有効化
 //#define PRECISION_CPI 4  // 下げた時のCPI (1/100の値を指定。左記ならCPI 400)
-
-#define POINTING_DEVICE_AUTO_MOUSE_ENABLE
-#define AUTO_MOUSE_DEFAULT_LAYER 4
-#define DYNAMIC_KEYMAP_LAYER_COUNT 5
 
 #define COMBO_COUNT 1          // コンボの数
 #define COMBO_TERM 200           // 同時押しとみなす時間（ms）
