@@ -84,23 +84,26 @@ combo_t key_combos[] = {
 static uint8_t last_layer = 0xFF;
 static uint8_t last_mode = 0xFF;
 static uint8_t last_index = 0xFF;
+static bool last_enabled = false;
 static bool custom_breathing = false;
 
 void matrix_scan_user(void) {
 #ifdef RGBLIGHT_ENABLE
     uint8_t current_layer = get_highest_layer(layer_state);
     uint8_t current_mode = rgblight_get_mode();
+    bool current_enabled = rgblight_is_enabled();
     uint8_t current_index = (timer_read() & 0x0FFF) >> 7; // 32 steps over 4096ms
 
     bool need_update = false;
     
-    if (current_layer != last_layer || current_mode != last_mode) {
+    if (current_layer != last_layer || current_mode != last_mode || current_enabled != last_enabled) {
         last_layer = current_layer;
         last_mode = current_mode;
+        last_enabled = current_enabled;
         need_update = true;
     }
     
-    if (rgblight_is_enabled() && current_mode == RGBLIGHT_MODE_STATIC_LIGHT && custom_breathing) {
+    if (current_enabled && current_mode == RGBLIGHT_MODE_STATIC_LIGHT && custom_breathing) {
         if (current_index != last_index) {
             last_index = current_index;
             need_update = true;
@@ -108,7 +111,7 @@ void matrix_scan_user(void) {
     }
 
     if (need_update) {
-        if (rgblight_is_enabled() && current_mode == RGBLIGHT_MODE_STATIC_LIGHT) {
+        if (current_enabled && current_mode == RGBLIGHT_MODE_STATIC_LIGHT) {
             uint8_t h = 0, s = 0, v = 255;
             switch (current_layer) {
                 case 0:  h = 0; s = 0; v = 255; break;
