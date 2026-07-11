@@ -62,23 +62,42 @@ layer_state_t layer_state_set_user(layer_state_t state) {
 
 #ifdef RGBLIGHT_ENABLE
     if (rgblight_is_enabled()) {
+        uint8_t h = 0, s = 0, v = 255;
+        
         switch (get_highest_layer(state)) {
             case 0:
-                rgblight_reload_from_eeprom();
+                h = 0; s = 0; v = 255;
                 break;
             case 1:
-                rgblight_sethsv_noeeprom(HSV_BLUE);
+                h = 170; s = 85; v = 255;
                 break;
             case 2:
-                rgblight_sethsv_noeeprom(HSV_RED);
+                h = 170; s = 170; v = 255;
                 break;
             case 3:
-                rgblight_sethsv_noeeprom(HSV_GREEN);
+                h = 170; s = 255; v = 255;
                 break;
             default:
-                rgblight_reload_from_eeprom();
+                h = 0; s = 0; v = 255;
                 break;
         }
+
+        LED_TYPE color_led;
+        sethsv(h, s, v, &color_led);
+        
+        for (uint8_t i = 0; i < RGBLED_NUM; i++) {
+            if (i >= 29 && i < 44) { // Left L30-L37 (29-36) and Right L1-L7 (37-43)
+                led[i] = color_led;
+            } else {
+                led[i].r = 0;
+                led[i].g = 0;
+                led[i].b = 0;
+#ifdef RGBW
+                led[i].w = 0;
+#endif
+            }
+        }
+        rgblight_set();
     }
 #endif
 
