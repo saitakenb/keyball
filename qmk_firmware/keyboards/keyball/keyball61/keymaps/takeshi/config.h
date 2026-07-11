@@ -37,8 +37,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //#define POINTING_DEVICE_AUTO_MOUSE_ENABLE
 //#define AUTO_MOUSE_DEFAULT_LAYER 2
 
-#define COMBO_COUNT 1          // コンボの数
+#define COMBO_COUNT 6          // コンボの数
 #define COMBO_TERM 200           // 同時押しとみなす時間（ms）
+#define COMBO_MUST_KEY_PRESS
 
 #define BOTH_SHIFTS_TURNS_ON_CAPS_WORD  // 両シフト同時押しでCaps Word
 

@@ -75,9 +75,19 @@ void oledkit_render_info_user(void) {
 
 #ifdef COMBO_ENABLE
 const uint16_t PROGMEM my_F2[] = {LT(2, KC_SPC), KC_W, COMBO_END};
+const uint16_t PROGMEM combo_df[] = {LT(3, KC_D), LT(1, KC_F), COMBO_END};
+const uint16_t PROGMEM combo_jk[] = {LT(1, KC_J), LT(3, KC_K), COMBO_END};
+const uint16_t PROGMEM combo_zxc[] = {KC_Z, KC_X, KC_C, COMBO_END};
+const uint16_t PROGMEM combo_sd[] = {KC_S, LT(3, KC_D), COMBO_END};
+const uint16_t PROGMEM combo_kl[] = {LT(3, KC_K), LT(2, KC_L), COMBO_END};
 
 combo_t key_combos[] = {
     COMBO(my_F2, KC_F2),
+    COMBO(combo_df, KC_ESC),
+    COMBO(combo_jk, KC_ENT),
+    COMBO(combo_zxc, KC_MUTE),
+    COMBO(combo_sd, KC_TAB),
+    COMBO(combo_kl, KC_BSPC),
 };
 #endif
 
