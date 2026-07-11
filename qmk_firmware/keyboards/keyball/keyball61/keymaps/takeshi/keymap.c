@@ -59,48 +59,6 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
 layer_state_t layer_state_set_user(layer_state_t state) {
     // Auto enable scroll mode when the highest layer is 3
     keyball_set_scroll_mode(get_highest_layer(state) == 3);
-
-#ifdef RGBLIGHT_ENABLE
-    if (rgblight_is_enabled()) {
-        uint8_t h = 0, s = 0, v = 255;
-        
-        switch (get_highest_layer(state)) {
-            case 0:
-                h = 0; s = 0; v = 255;
-                break;
-            case 1:
-                h = 170; s = 85; v = 255;
-                break;
-            case 2:
-                h = 170; s = 170; v = 255;
-                break;
-            case 3:
-                h = 170; s = 255; v = 255;
-                break;
-            default:
-                h = 0; s = 0; v = 255;
-                break;
-        }
-
-        LED_TYPE color_led;
-        sethsv(h, s, v, &color_led);
-        
-        for (uint8_t i = 0; i < RGBLED_NUM; i++) {
-            if (i >= 29 && i < 44) { // Left L30-L37 (29-36) and Right L1-L7 (37-43)
-                led[i] = color_led;
-            } else {
-                led[i].r = 0;
-                led[i].g = 0;
-                led[i].b = 0;
-#ifdef RGBW
-                led[i].w = 0;
-#endif
-            }
-        }
-        rgblight_set();
-    }
-#endif
-
     return state;
 }
 
@@ -122,3 +80,91 @@ combo_t key_combos[] = {
     COMBO(my_F2, KC_F2),
 };
 #endif
+
+static uint8_t last_layer = 0xFF;
+static uint8_t last_mode = 0xFF;
+static uint8_t last_index = 0xFF;
+static bool custom_breathing = false;
+
+void matrix_scan_user(void) {
+#ifdef RGBLIGHT_ENABLE
+    uint8_t current_layer = get_highest_layer(layer_state);
+    uint8_t current_mode = rgblight_get_mode();
+    uint8_t current_index = (timer_read() & 0x0FFF) >> 7; // 32 steps over 4096ms
+
+    bool need_update = false;
+    
+    if (current_layer != last_layer || current_mode != last_mode) {
+        last_layer = current_layer;
+        last_mode = current_mode;
+        need_update = true;
+    }
+    
+    if (rgblight_is_enabled() && current_mode == RGBLIGHT_MODE_STATIC_LIGHT && custom_breathing) {
+        if (current_index != last_index) {
+            last_index = current_index;
+            need_update = true;
+        }
+    }
+
+    if (need_update) {
+        if (rgblight_is_enabled() && current_mode == RGBLIGHT_MODE_STATIC_LIGHT) {
+            uint8_t h = 0, s = 0, v = 255;
+            switch (current_layer) {
+                case 0:  h = 0; s = 0; v = 255; break;
+                case 1:  h = 170; s = 85; v = 255; break;
+                case 2:  h = 170; s = 170; v = 255; break;
+                case 3:  h = 170; s = 255; v = 255; break;
+                default: h = 0; s = 0; v = 255; break;
+            }
+
+            if (custom_breathing) {
+                static const uint8_t sin_table[32] = {
+                    127, 152, 176, 198, 217, 233, 244, 251,
+                    254, 251, 244, 233, 217, 198, 176, 152,
+                    127, 102,  78,  56,  37,  21,  10,   3,
+                      0,   3,  10,  21,  37,  56,  78, 102
+                };
+                v = ((uint16_t)sin_table[current_index] * rgblight_get_val()) / 255;
+            }
+
+            LED_TYPE color_led;
+            sethsv(h, s, v, &color_led);
+
+            for (uint8_t i = 0; i < RGBLED_NUM; i++) {
+                if (i >= 29 && i < 44) { // Left L30-L37 (29-36) and Right L1-L7 (37-43)
+                    led[i] = color_led;
+                } else {
+                    led[i].r = 0;
+                    led[i].g = 0;
+                    led[i].b = 0;
+#ifdef RGBW
+                    led[i].w = 0;
+#endif
+                }
+            }
+            rgblight_set();
+        }
+    }
+#endif
+}
+
+bool process_record_user(uint16_t keycode, keyrecord_t *record) {
+#ifdef RGBLIGHT_ENABLE
+    switch (keycode) {
+        case RGB_MOD:
+        case RGB_RMOD:
+            if (record->event.pressed) {
+                custom_breathing = !custom_breathing;
+                // Force an immediate update
+                last_layer = 0xFF;
+                last_mode = 0xFF;
+                last_index = 0xFF;
+            }
+            return false; // Intercept and block default mode switching since we disabled normal animations
+        default:
+            return true;
+    }
+#endif
+    return true;
+}
