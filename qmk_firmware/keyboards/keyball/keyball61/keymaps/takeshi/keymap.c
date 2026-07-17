@@ -62,6 +62,14 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
 layer_state_t layer_state_set_user(layer_state_t state) {
     // Auto enable scroll mode when the highest layer is 3
     keyball_set_scroll_mode(get_highest_layer(state) == 3);
+
+#ifdef RGBLIGHT_ENABLE
+    uint8_t current_layer = get_highest_layer(state);
+    if (rgblight_config.enable) {
+        rgblight_sethsv_noeeprom(170, current_layer * 85, rgblight_config.val);
+    }
+#endif
+
     return state;
 }
 
@@ -94,42 +102,18 @@ combo_t key_combos[] = {
 };
 #endif
 
-static uint16_t last_state = 0xFFFF;
-
-void matrix_scan_user(void) {
+void matrix_init_user(void) {
 #ifdef RGBLIGHT_ENABLE
-    uint8_t current_layer = get_highest_layer(layer_state);
-    uint8_t current_mode = rgblight_config.mode;
-    bool current_enabled = rgblight_config.enable;
-
-    bool need_update = false;
-
-    // レイヤー・モード・有効/無効状態を監視
-    uint16_t current_state = (current_layer << 8) | (current_mode << 1) | current_enabled;
-    if (current_state != last_state) {
-        last_state = current_state;
-        need_update = true;
-    }
-
-    if (need_update && current_enabled && current_mode == RGBLIGHT_MODE_STATIC_LIGHT) {
-        LED_TYPE color_led;
-        sethsv(170, current_layer * 85, rgblight_config.val, &color_led);
-
-        uint8_t num = rgblight_ranges.clipping_num_leds;
-        bool is_left = !keyball.this_have_ball;
-
-        if (is_left) {
-            for (uint8_t i = 0; i < num; i++) {
-                led[i] = (i >= 29) ? color_led : (LED_TYPE){0, 0, 0};
-            }
-        } else {
-            for (uint8_t i = 0; i < num; i++) {
-                led[i] = (i <= 6) ? color_led : (LED_TYPE){0, 0, 0};
-            }
-        }
-        rgblight_set();
+    bool is_left = !keyball.this_have_ball;
+    if (is_left) {
+        rgblight_set_clipping_range(29, 8);
+    } else {
+        rgblight_set_clipping_range(0, 7);
     }
 #endif
+}
+
+void matrix_scan_user(void) {
 }
 
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
@@ -138,6 +122,10 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
     if (keycode == RGB_MOD || keycode == RGB_RMOD) {
         if (record->event.pressed) {
             rgblight_toggle_noeeprom();
+            if (rgblight_config.enable) {
+                uint8_t current_layer = get_highest_layer(layer_state);
+                rgblight_sethsv_noeeprom(170, current_layer * 85, rgblight_config.val);
+            }
         }
         return false;
     }
