@@ -94,23 +94,13 @@ combo_t key_combos[] = {
 };
 #endif
 
-#define CUSTOM_LED_STATIC    0
-#define CUSTOM_LED_BREATHING 1
-#define CUSTOM_LED_GRADIENT  2
-#define CUSTOM_LED_MODE_COUNT 3
-
 static uint16_t last_state = 0xFFFF;
-static uint8_t last_tick = 0xFF;
 
 void matrix_scan_user(void) {
 #ifdef RGBLIGHT_ENABLE
     uint8_t current_layer = get_highest_layer(layer_state);
     uint8_t current_mode = rgblight_config.mode;
     bool current_enabled = rgblight_config.enable;
-    uint8_t mode = rgblight_config.sat % 3;
-
-    uint8_t current_tick = timer_read() >> (mode == CUSTOM_LED_GRADIENT ? 5 : 7);
-    if (mode != CUSTOM_LED_GRADIENT) current_tick &= 0x1F;
 
     bool need_update = false;
 
@@ -120,42 +110,17 @@ void matrix_scan_user(void) {
         need_update = true;
     }
 
-    if (current_enabled && current_mode == RGBLIGHT_MODE_STATIC_LIGHT && mode != CUSTOM_LED_STATIC) {
-        if (current_tick != last_tick) {
-            last_tick = current_tick;
-            need_update = true;
-        }
-    }
-
     if (need_update && current_enabled && current_mode == RGBLIGHT_MODE_STATIC_LIGHT) {
-        if (is_keyboard_master()) {
-            uint8_t val = rgblight_config.val;
-            uint8_t h = 0, s = 0, v = val;
+        uint8_t start = rgblight_ranges.clipping_start_pos;
+        uint8_t num = rgblight_ranges.clipping_num_leds;
 
-            if (mode == CUSTOM_LED_GRADIENT) {
-                h = current_tick;
-                s = 255;
-            } else {
-                h = 170;
-                s = current_layer * 85;
-                if (mode == CUSTOM_LED_BREATHING) {
-                    uint8_t breathing_val = (current_tick < 16 ? current_tick : 31 - current_tick) * 16;
-                    v = ((uint16_t)breathing_val * val) / 255;
-                }
-            }
+        LED_TYPE color_led;
+        sethsv(170, current_layer * 85, rgblight_config.val, &color_led);
 
-            LED_TYPE color_led;
-            sethsv(h, s, v, &color_led);
-
-            for (uint8_t i = 0; i < RGBLED_NUM; i++) {
-                if ((i >= 29 && i < 37) || (i >= 66 && i < 74)) {
-                    led[i] = color_led;
-                } else {
-                    led[i] = (LED_TYPE){0, 0, 0};
-                }
-            }
-            rgblight_set();
+        for (uint8_t i = 0; i < num; i++) {
+            led[start + i] = (i >= 29) ? color_led : (LED_TYPE){0, 0, 0};
         }
+        rgblight_set();
     }
 #endif
 }
@@ -165,10 +130,7 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
     if (keycode == RGB_SAI || keycode == RGB_SAD) return false;
     if (keycode == RGB_MOD || keycode == RGB_RMOD) {
         if (record->event.pressed) {
-            uint8_t mode = (rgblight_config.sat % 3 + (keycode == RGB_MOD ? 1 : 2)) % 3;
-            rgblight_config.sat = mode;
-            last_state = 0xFFFF;
-            last_tick = 0xFF;
+            rgblight_toggle_noeeprom();
         }
         return false;
     }
