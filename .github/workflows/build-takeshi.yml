@@ -2,12 +2,6 @@ name: Build takeshi firmware
 
 on:
   push:
-    paths:
-      - 'qmk_firmware/keyboards/keyball/**.mk'
-      - 'qmk_firmware/keyboards/keyball/**.c'
-      - 'qmk_firmware/keyboards/keyball/**.h'
-      - 'qmk_firmware/keyboards/keyball/**.json'
-      - '.github/**.yml'
     branches:
       - '*'
   workflow_dispatch: {}
