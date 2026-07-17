@@ -94,7 +94,6 @@ combo_t key_combos[] = {
 };
 #endif
 
-extern volatile bool isLeftHand;
 static uint16_t last_state = 0xFFFF;
 
 void matrix_scan_user(void) {
@@ -105,6 +104,7 @@ void matrix_scan_user(void) {
 
     bool need_update = false;
 
+    // レイヤー・モード・有効/無効状態を監視
     uint16_t current_state = (current_layer << 8) | (current_mode << 1) | current_enabled;
     if (current_state != last_state) {
         last_state = current_state;
@@ -112,31 +112,22 @@ void matrix_scan_user(void) {
     }
 
     if (need_update && current_enabled && current_mode == RGBLIGHT_MODE_STATIC_LIGHT) {
-        if (is_keyboard_master()) {
-            LED_TYPE color_led;
-            sethsv(170, current_layer * 85, rgblight_config.val, &color_led);
+        LED_TYPE color_led;
+        sethsv(170, current_layer * 85, rgblight_config.val, &color_led);
 
-            for (uint8_t i = 0; i < RGBLED_NUM; i++) {
-                led[i] = (LED_TYPE){0, 0, 0};
-            }
+        uint8_t num = rgblight_ranges.clipping_num_leds;
+        bool is_left = !keyball.this_have_ball;
 
-            if (isLeftHand) {
-                for (uint8_t i = 29; i <= 36; i++) {
-                    led[i] = color_led;
-                }
-                for (uint8_t i = 37; i <= 43; i++) {
-                    led[i] = color_led;
-                }
-            } else {
-                for (uint8_t i = 0; i <= 6; i++) {
-                    led[i] = color_led;
-                }
-                for (uint8_t i = 63; i <= 70; i++) {
-                    led[i] = color_led;
-                }
+        if (is_left) {
+            for (uint8_t i = 0; i < num; i++) {
+                led[i] = (i >= 29) ? color_led : (LED_TYPE){0, 0, 0};
             }
-            rgblight_set();
+        } else {
+            for (uint8_t i = 0; i < num; i++) {
+                led[i] = (i <= 6) ? color_led : (LED_TYPE){0, 0, 0};
+            }
         }
+        rgblight_set();
     }
 #endif
 }
