@@ -111,16 +111,21 @@ void matrix_scan_user(void) {
     }
 
     if (need_update && current_enabled && current_mode == RGBLIGHT_MODE_STATIC_LIGHT) {
-        uint8_t start = rgblight_ranges.clipping_start_pos;
-        uint8_t num = rgblight_ranges.clipping_num_leds;
+        if (is_keyboard_master()) {
+            LED_TYPE color_led;
+            sethsv(170, current_layer * 85, rgblight_config.val, &color_led);
 
-        LED_TYPE color_led;
-        sethsv(170, current_layer * 85, rgblight_config.val, &color_led);
+            uint8_t my_leds = rgblight_ranges.clipping_num_leds;
 
-        for (uint8_t i = 0; i < num; i++) {
-            led[start + i] = (i >= 29) ? color_led : (LED_TYPE){0, 0, 0};
+            for (uint8_t i = 0; i < RGBLED_NUM; i++) {
+                if ((i >= 29 && i < my_leds) || (i >= (my_leds + 29) && i < RGBLED_NUM)) {
+                    led[i] = color_led;
+                } else {
+                    led[i] = (LED_TYPE){0, 0, 0};
+                }
+            }
+            rgblight_set();
         }
-        rgblight_set();
     }
 #endif
 }
