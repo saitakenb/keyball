@@ -73,6 +73,12 @@ void oledkit_render_info_user(void) {
     // keyball_oled_render_keyinfo();
     keyball_oled_render_ballinfo();
     keyball_oled_render_layerinfo();
+#ifdef RGBLIGHT_ENABLE
+    uint8_t count = rgblight_config.mode;
+    oled_write_char('\n', false);
+    oled_write_char((count / 10) + '0', false);
+    oled_write_char((count % 10) + '0', false);
+#endif
 }
 #endif
 
@@ -101,23 +107,6 @@ void update_led_state(void) {
     }
 
     uint8_t current_layer = get_highest_layer(layer_state);
-    bool is_left = !keyball.this_have_ball;
-
-    if (rgblight_config.mode == 2) {
-        // 前面モード
-        if (is_left) {
-            rgblight_set_clipping_range(0, 29); // 左前面: 0〜28
-        } else {
-            rgblight_set_clipping_range(7, 27); // 右前面: 7〜33
-        }
-    } else {
-        // 裏面モード
-        if (is_left) {
-            rgblight_set_clipping_range(29, 8); // 左裏面: 29〜36
-        } else {
-            rgblight_set_clipping_range(0, 7);  // 右裏面: 0〜6
-        }
-    }
 
     // レイヤー配色定義（識別性向上版）
     uint8_t hue = 170; 
@@ -127,13 +116,40 @@ void update_led_state(void) {
         sat = 160;
     } else if (current_layer == 2) {
         hue = 128; // シアン (水色)
-    } else if (current_layer == 3) {
-        hue = 170; // 青
-    } else {
+    } else if (current_layer == 0) {
         sat = 0;   // レイヤー0は白
     }
 
-    rgblight_sethsv_noeeprom(hue, sat, rgblight_config.val);
+    LED_TYPE color_led;
+    sethsv(hue, sat, rgblight_config.val, &color_led);
+
+    uint8_t num = rgblight_ranges.clipping_num_leds;
+
+    // 全LEDを消灯クリア
+    for (uint8_t i = 0; i < num; i++) {
+        led[i] = (LED_TYPE){0, 0, 0};
+    }
+
+    // 点灯制限数をモード変数 (0〜37) から取得
+    uint8_t limit = rgblight_config.mode;
+
+    if (!keyball.this_have_ball) {
+        // 左手側: 裏面親指（29..36, 8個）から順に点灯し、次に前面（0..28, 29個）を点灯
+        for (uint8_t cnt = 0; cnt < limit; cnt++) {
+            uint8_t idx = cnt - 8;
+            if (cnt < 8) {
+                idx = cnt + 29;
+            }
+            if (idx < num) led[idx] = color_led;
+        }
+    } else {
+        // 右手側: 裏面親指（0..6, 7個）から順に点灯し、次に前面（7..33, 27個）を点灯
+        for (uint8_t cnt = 0; cnt < limit; cnt++) {
+            if (cnt < num) led[cnt] = color_led;
+        }
+    }
+
+    rgblight_set();
 }
 #endif
 
@@ -145,15 +161,11 @@ void matrix_init_user(void) {
 
 void matrix_scan_user(void) {
 #ifdef RGBLIGHT_ENABLE
-    static uint8_t last_layer = 255;
-    static uint8_t last_mode = 0;
-    static bool last_enabled = false;
-
+    static uint16_t last_state = 0xFFFF;
     uint8_t current_layer = get_highest_layer(layer_state);
-    if (current_layer != last_layer || rgblight_config.mode != last_mode || rgblight_config.enable != last_enabled) {
-        last_layer = current_layer;
-        last_mode = rgblight_config.mode;
-        last_enabled = rgblight_config.enable;
+    uint16_t current_state = (current_layer << 8) | (rgblight_config.mode << 1) | rgblight_config.enable;
+    if (current_state != last_state) {
+        last_state = current_state;
         update_led_state();
     }
 #endif
@@ -161,12 +173,13 @@ void matrix_scan_user(void) {
 
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
 #ifdef RGBLIGHT_ENABLE
-    if (keycode == RGB_SAI || keycode == RGB_SAD) return false;
     if (keycode == RGB_MOD || keycode == RGB_RMOD) {
         if (record->event.pressed) {
-            // モードを 1 (裏面) と 2 (前面) の間でトグル
-            uint8_t next_mode = (rgblight_config.mode == 2) ? 1 : 2;
-            rgblight_mode_noeeprom(next_mode);
+            if (keycode == RGB_MOD && rgblight_config.mode < 37) {
+                rgblight_mode_noeeprom(rgblight_config.mode + 1);
+            } else if (keycode == RGB_RMOD && rgblight_config.mode > 0) {
+                rgblight_mode_noeeprom(rgblight_config.mode - 1);
+            }
         }
         return false;
     }
