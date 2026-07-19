@@ -62,14 +62,6 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
 layer_state_t layer_state_set_user(layer_state_t state) {
     // Auto enable scroll mode when the highest layer is 3
     keyball_set_scroll_mode(get_highest_layer(state) == 3);
-
-#ifdef RGBLIGHT_ENABLE
-    uint8_t current_layer = get_highest_layer(state);
-    if (rgblight_config.enable) {
-        rgblight_sethsv_noeeprom(170, current_layer * 85, rgblight_config.val);
-    }
-#endif
-
     return state;
 }
 
@@ -102,18 +94,69 @@ combo_t key_combos[] = {
 };
 #endif
 
+#ifdef RGBLIGHT_ENABLE
+void update_led_state(void) {
+    if (!rgblight_config.enable) {
+        return;
+    }
+
+    uint8_t current_layer = get_highest_layer(layer_state);
+    bool is_left = !keyball.this_have_ball;
+
+    if (rgblight_config.mode == 2) {
+        // 前面モード
+        if (is_left) {
+            rgblight_set_clipping_range(0, 29); // 左前面: 0〜28
+        } else {
+            rgblight_set_clipping_range(7, 27); // 右前面: 7〜33
+        }
+    } else {
+        // 裏面モード
+        if (is_left) {
+            rgblight_set_clipping_range(29, 8); // 左裏面: 29〜36
+        } else {
+            rgblight_set_clipping_range(0, 7);  // 右裏面: 0〜6
+        }
+    }
+
+    // レイヤー配色定義（識別性向上版）
+    uint8_t hue = 170; 
+    uint8_t sat = 255;
+    if (current_layer == 1) {
+        hue = 200; // 薄紫 (ラベンダー)
+        sat = 160;
+    } else if (current_layer == 2) {
+        hue = 128; // シアン (水色)
+    } else if (current_layer == 3) {
+        hue = 170; // 青
+    } else {
+        sat = 0;   // レイヤー0は白
+    }
+
+    rgblight_sethsv_noeeprom(hue, sat, rgblight_config.val);
+}
+#endif
+
 void matrix_init_user(void) {
 #ifdef RGBLIGHT_ENABLE
-    bool is_left = !keyball.this_have_ball;
-    if (is_left) {
-        rgblight_set_clipping_range(29, 8);
-    } else {
-        rgblight_set_clipping_range(0, 7);
-    }
+    update_led_state();
 #endif
 }
 
 void matrix_scan_user(void) {
+#ifdef RGBLIGHT_ENABLE
+    static uint8_t last_layer = 255;
+    static uint8_t last_mode = 0;
+    static bool last_enabled = false;
+
+    uint8_t current_layer = get_highest_layer(layer_state);
+    if (current_layer != last_layer || rgblight_config.mode != last_mode || rgblight_config.enable != last_enabled) {
+        last_layer = current_layer;
+        last_mode = rgblight_config.mode;
+        last_enabled = rgblight_config.enable;
+        update_led_state();
+    }
+#endif
 }
 
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
@@ -121,11 +164,9 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
     if (keycode == RGB_SAI || keycode == RGB_SAD) return false;
     if (keycode == RGB_MOD || keycode == RGB_RMOD) {
         if (record->event.pressed) {
-            rgblight_toggle_noeeprom();
-            if (rgblight_config.enable) {
-                uint8_t current_layer = get_highest_layer(layer_state);
-                rgblight_sethsv_noeeprom(170, current_layer * 85, rgblight_config.val);
-            }
+            // モードを 1 (裏面) と 2 (前面) の間でトグル
+            uint8_t next_mode = (rgblight_config.mode == 2) ? 1 : 2;
+            rgblight_mode_noeeprom(next_mode);
         }
         return false;
     }
