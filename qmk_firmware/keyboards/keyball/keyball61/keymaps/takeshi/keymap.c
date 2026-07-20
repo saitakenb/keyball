@@ -108,6 +108,9 @@ extern rgblight_status_t rgblight_status;
 // 低レイヤの物理LED出力関数を宣言
 extern void ws2812_setleds(LED_TYPE *ledarray, uint16_t number_of_leds);
 
+// マスター側の本来のRGBオン/OFF状態を退避するグローバル静的変数
+static bool real_enable = false;
+
 // QMK標準の左右判定APIを使用（スレーブ側でも100%正確に動作します）
 bool get_is_left_hand_latched(void) {
     return is_keyboard_left();
@@ -136,8 +139,11 @@ void update_led_state(void) {
         led[i] = (LED_TYPE){0, 0, 0};
     }
 
+    // スレーブ側の場合は退避しておいた real_enable、マスター側は config.enable を使用して点灯を判定
+    bool active = is_keyboard_master() ? rgblight_config.enable : real_enable;
+
     // RGBが有効なときのみ、対象範囲にカラーを設定する
-    if (rgblight_config.enable) {
+    if (active) {
         // 点灯制限数を sat 変数 (0〜37) から取得
         uint8_t limit = rgblight_config.sat;
         if (limit > 37) limit = 8; // デフォルト補正
@@ -166,11 +172,10 @@ void update_led_state(void) {
         rgblight_set_effect_range(0, num);
         rgblight_set();
     } else {
-        // スレーブ側はQMK標準の描画・自動更新を完全にスルーさせるため、エフェクト範囲を (0, 0) に固定
-        rgblight_set_clipping_range(0, 0);
-        rgblight_set_effect_range(0, 0);
-        // 低レイヤドライバを直接呼び出して物理LEDへ部分点灯を強制出力する
+        // スレーブ側は描画・自動更新をスルーさせるため一時的にenableを1にしてws2812を実行し、即座に0に戻す
+        rgblight_config.enable = 1;
         ws2812_setleds(led, num);
+        rgblight_config.enable = 0;
     }
 }
 #endif
@@ -184,14 +189,9 @@ void matrix_init_user(void) {
     bool is_left = get_is_left_hand_latched();
     uint8_t num = is_left ? 37 : 34;
 
-    // マスターは最大数、スレーブは (0, 0) で初期化して標準タスクの上書きを防ぐ
-    if (is_keyboard_master()) {
-        rgblight_set_clipping_range(0, num);
-        rgblight_set_effect_range(0, num);
-    } else {
-        rgblight_set_clipping_range(0, 0);
-        rgblight_set_effect_range(0, 0);
-    }
+    // クリッピング・エフェクト範囲は最大数で初期化
+    rgblight_set_clipping_range(0, num);
+    rgblight_set_effect_range(0, num);
 
     // レイヤー0(白)初期状態: hue=170, sat=8 (点灯数8), val=127 (初期輝度50%)
     rgblight_config.hue = 170;
@@ -200,7 +200,11 @@ void matrix_init_user(void) {
     
     // マスター起動時に同期フラグを立ててスレーブへ送信
     if (is_keyboard_master()) {
+        real_enable = true;
         rgblight_status.change_flags |= RGBLIGHT_STATUS_CHANGE_HSVS;
+    } else {
+        real_enable = rgblight_config.enable;
+        rgblight_config.enable = 0; // スレーブは常時0にして標準上書きを防御
     }
     
     update_led_state();
@@ -210,6 +214,18 @@ void matrix_init_user(void) {
 void matrix_scan_user(void) {
 #ifdef RGBLIGHT_ENABLE
     static uint16_t last_state = 0xFFFF;
+    
+    // スレーブ側では、同期受信によって enable が 1 に書き換えられたら、
+    // 即座にそれを退避して 0 に戻し、QMK標準タスクの自動上書きを完全シャットアウトする
+    if (!is_keyboard_master()) {
+        if (rgblight_config.enable) {
+            real_enable = true;
+            rgblight_config.enable = 0;
+        }
+    } else {
+        real_enable = rgblight_config.enable;
+    }
+
     uint8_t current_layer = get_highest_layer(layer_state);
 
     // レイヤーに応じて target_hue (色相) を自動決定
@@ -220,8 +236,8 @@ void matrix_scan_user(void) {
         target_hue = 128; // シアン (水色)
     }
 
-    // 監視対象：レイヤー、ON/OFF状態、点灯個数(sat)、全体の明るさ(val)
-    uint16_t current_state = (current_layer << 12) | (rgblight_config.sat << 6) | (rgblight_config.val << 1) | rgblight_config.enable;
+    // 監視対象：レイヤー、ON/OFF状態（real_enable）、点灯個数(sat)、全体の明るさ(val)
+    uint16_t current_state = (current_layer << 12) | (rgblight_config.sat << 6) | (rgblight_config.val << 1) | real_enable;
     
     static uint8_t scan_div = 0;
     scan_div++;
