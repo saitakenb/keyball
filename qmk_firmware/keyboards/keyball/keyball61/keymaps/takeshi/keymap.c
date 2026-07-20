@@ -124,12 +124,8 @@ void update_led_state(void) {
     // 明度(rgblight_config.val)と自律決定した彩度を使用して、全体の輝度調整が完全に機能する色を生成
     sethsv(rgblight_config.hue, sat_actual, rgblight_config.val, &color_led);
 
-    // 左右判定からLED総数を固定決定（L=37, R=34）
-    bool is_left = get_is_left_hand_latched();
-    uint8_t num = is_left ? 37 : 34;
-
-    // 全LEDを消灯クリア
-    for (uint8_t i = 0; i < num; i++) {
+    // 左右合計71個の全バッファ（L=37, R=34）を消灯クリア
+    for (uint8_t i = 0; i < 71; i++) {
         led[i] = (LED_TYPE){0, 0, 0};
     }
 
@@ -139,33 +135,36 @@ void update_led_state(void) {
         uint8_t limit = rgblight_config.sat;
         if (limit > 37) limit = 8; // デフォルト補正
 
-        if (is_left) {
-            // 左手側: 裏面親指（29..36, 8個）から順に点灯し、次に前面（0..28, 29個）を点灯
-            for (uint8_t cnt = 0; cnt < limit; cnt++) {
-                uint8_t idx = cnt - 8;
-                if (cnt < 8) {
-                    idx = cnt + 29;
-                }
-                if (idx < num) led[idx] = color_led;
+        // 1. 左手側バッファの描画 (インデックス 0〜36)
+        for (uint8_t cnt = 0; cnt < limit; cnt++) {
+            uint8_t idx = cnt - 8;
+            if (cnt < 8) {
+                idx = cnt + 29;
             }
-        } else {
-            // 右手側: 裏面親指（0..6, 7個）から順に点灯し、次に前面（7..33, 27個）を点灯
-            for (uint8_t cnt = 0; cnt < limit; cnt++) {
-                if (cnt < num) led[cnt] = color_led;
+            if (idx < 37) {
+                led[idx] = color_led;
+            }
+        }
+
+        // 2. 右手側バッファの描画 (インデックス 37〜70)
+        for (uint8_t cnt = 0; cnt < limit; cnt++) {
+            uint8_t idx = cnt + 37; // 右手は37オフセットから開始
+            if (idx < 71) {
+                led[idx] = color_led;
             }
         }
     }
 
-    // 描画する瞬間だけクリッピング範囲を有効にする（全点灯フラッシュの物理的遮断）
-    rgblight_set_clipping_range(0, num);
-    rgblight_set_effect_range(0, num);
+    // 描画する瞬間だけクリッピング範囲を全71個のLED全体に広げる
+    rgblight_set_clipping_range(0, 71);
+    rgblight_set_effect_range(0, 71);
 
     // 常に物理LEDに上書き書き出し
     rgblight_set();
 
-    // 出力直後にクリッピング範囲を 0 に戻し、QMK標準タスクによる全点灯上書きを恒久的に防ぐ
-    rgblight_set_clipping_range(0, 0);
-    rgblight_set_effect_range(0, 0);
+    // 出力直後にクリッピング範囲を (0, 1) に設定し、同期パケットの送信経路を確保しつつ全点灯を防ぐ
+    rgblight_set_clipping_range(0, 1);
+    rgblight_set_effect_range(0, 1);
 }
 #endif
 
@@ -175,9 +174,9 @@ void matrix_init_user(void) {
     rgblight_enable_noeeprom();
     rgblight_mode_noeeprom(1);
     
-    // QMK標準タスクの描画を無効化するため、初期値としてクリッピングを0にする
-    rgblight_set_clipping_range(0, 0);
-    rgblight_set_effect_range(0, 0);
+    // 同期送信を維持しつつ描画を防ぐため、初期値としてクリッピングを(0, 1)にする
+    rgblight_set_clipping_range(0, 1);
+    rgblight_set_effect_range(0, 1);
 
     // レイヤー0(白)初期状態: hue=170, sat=8 (点灯数8をsatに格納), val=127 (初期輝度50%)
     rgblight_sethsv_noeeprom(170, 8, 127);
@@ -209,12 +208,12 @@ void matrix_scan_user(void) {
         last_state = current_state;
         scan_div = 0;
 
-        // マスター側（USB接続側）でのみ、レイヤー変更を検知して同期（sethsv_noeeprom）を実行する
-        // 呼び出す前にクリッピングを一時的に0にして、マスター側での一瞬の全点灯も完全防止する
+        // マスター側でのみ、レイヤー変更を検知して同期を実行
+        // クリッピング(0, 1)を維持したまま送信することで、同期させつつフラッシュを完全防止
         if (is_keyboard_master()) {
             if (rgblight_config.hue != target_hue) {
-                rgblight_set_clipping_range(0, 0);
-                rgblight_set_effect_range(0, 0);
+                rgblight_set_clipping_range(0, 1);
+                rgblight_set_effect_range(0, 1);
                 rgblight_sethsv_noeeprom(target_hue, rgblight_config.sat, rgblight_config.val);
             }
         }
@@ -230,13 +229,19 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
         if (record->event.pressed) {
             uint8_t count = rgblight_config.sat; // sat を点灯数として流用
             if (count > 37) count = 8; // デフォルト補正
-
-            // sat に直接代入することで全点灯フラッシュを回避しつつスレーブにも同期される
+            
+            uint8_t new_count = count;
             if (keycode == RGB_MOD && count < 37) {
-                rgblight_config.sat = count + 1;
+                new_count = count + 1;
             } else if (keycode == RGB_RMOD && count > 0) {
-                rgblight_config.sat = count - 1;
+                new_count = count - 1;
             }
+
+            // クリッピング(0, 1)で同期パケットを確実に送信しつつ、親指以外の全点灯フラッシュを完全防止する
+            rgblight_set_clipping_range(0, 1);
+            rgblight_set_effect_range(0, 1);
+            rgblight_sethsv_noeeprom(rgblight_config.hue, new_count, rgblight_config.val);
+
             update_led_state();
         }
         return false;
