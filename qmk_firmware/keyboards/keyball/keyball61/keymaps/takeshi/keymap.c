@@ -173,6 +173,10 @@ void update_led_state(void) {
         }
     }
 
+    // keyball61.c が自動的に適用するクリッピング制限範囲を強制上書きリセットする
+    rgblight_set_clipping_range(0, num);
+    rgblight_set_effect_range(0, num);
+
     // 常に物理LEDに上書き書き出しすることで、居残るデフォルトの赤点灯を完全に排除する
     rgblight_set();
 }
