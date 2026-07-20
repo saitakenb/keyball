@@ -104,25 +104,9 @@ combo_t key_combos[] = {
 #endif
 
 #ifdef RGBLIGHT_ENABLE
-// タイマー割り込みに依存せず、スキャンループ回数で決定論的にタイムアウトする左右ラッチ関数
+// タイマー競合や誤判定のない、QMK標準の左右判定APIを使用
 bool get_is_left_hand_latched(void) {
-    static bool has_determined = false;
-    static bool is_left_cached = true;
-    
-    if (!has_determined) {
-        if (keyball.this_have_ball) {
-            is_left_cached = false;
-            has_determined = true;
-        }
-        // スキャンが 5000 回実行されたら左手として確定 (タイマー競合対策)
-        static uint16_t scan_count = 0;
-        if (scan_count < 5000) {
-            scan_count++;
-        } else {
-            has_determined = true;
-        }
-    }
-    return is_left_cached;
+    return is_keyboard_left();
 }
 
 void update_led_state(void) {
@@ -140,7 +124,7 @@ void update_led_state(void) {
     // 明度(rgblight_config.val)と自律決定した彩度を使用して、全体の輝度調整が完全に機能する色を生成
     sethsv(rgblight_config.hue, sat_actual, rgblight_config.val, &color_led);
 
-    // 左右判定ラッチからLED総数を固定決定（L=37, R=34）
+    // 左右判定からLED総数を固定決定（L=37, R=34）
     bool is_left = get_is_left_hand_latched();
     uint8_t num = is_left ? 37 : 34;
 
@@ -149,7 +133,7 @@ void update_led_state(void) {
         led[i] = (LED_TYPE){0, 0, 0};
     }
 
-    // RGBが有効なときのみ、対象範囲にカラーを設定する（無効なときは消灯データがそのまま出力される）
+    // RGBが有効なときのみ、対象範囲にカラーを設定する
     if (rgblight_config.enable) {
         // 点灯制限数を sat 変数 (0〜37) から取得
         uint8_t limit = rgblight_config.sat;
@@ -172,12 +156,16 @@ void update_led_state(void) {
         }
     }
 
-    // keyball61.c が自動的に適用するクリッピング制限範囲を強制上書きリセットする
+    // 描画する瞬間だけクリッピング範囲を有効にする（全点灯フラッシュの物理的遮断）
     rgblight_set_clipping_range(0, num);
     rgblight_set_effect_range(0, num);
 
-    // 常に物理LEDに上書き書き出しすることで、居残るデフォルトの赤点灯を完全に排除する
+    // 常に物理LEDに上書き書き出し
     rgblight_set();
+
+    // 出力直後にクリッピング範囲を 0 に戻し、QMK標準タスクによる全点灯上書きを恒久的に防ぐ
+    rgblight_set_clipping_range(0, 0);
+    rgblight_set_effect_range(0, 0);
 }
 #endif
 
@@ -186,61 +174,52 @@ void matrix_init_user(void) {
 #ifdef RGBLIGHT_ENABLE
     rgblight_enable_noeeprom();
     rgblight_mode_noeeprom(1);
+    
+    // QMK標準タスクの描画を無効化するため、初期値としてクリッピングを0にする
+    rgblight_set_clipping_range(0, 0);
+    rgblight_set_effect_range(0, 0);
+
     // レイヤー0(白)初期状態: hue=170, sat=8 (点灯数8をsatに格納), val=127 (初期輝度50%)
     rgblight_sethsv_noeeprom(170, 8, 127);
+    
     update_led_state();
 #endif
 }
 
 void matrix_scan_user(void) {
 #ifdef RGBLIGHT_ENABLE
-    // hue も含めた状態変化を検知し、変化時のみ hue を直接代入して同期する
-    // （rgblight_sethsv_noeeprom() は全点灯フラッシュを引き起こすため使用しない）
-    static uint8_t last_layer  = 0xFF;
-    static uint8_t last_hue    = 0xFF;
-    static uint8_t last_sat    = 0xFF;
-    static uint8_t last_val    = 0xFF;
-    static uint8_t last_enable = 0xFF;
-    static uint8_t scan_div    = 0;
-
+    static uint16_t last_state = 0xFFFF;
     uint8_t current_layer = get_highest_layer(layer_state);
-    uint8_t cur_hue    = rgblight_config.hue;
-    uint8_t cur_sat    = rgblight_config.sat;
-    uint8_t cur_val    = rgblight_config.val;
-    uint8_t cur_enable = rgblight_config.enable ? 1 : 0;
 
-    bool state_changed = (current_layer != last_layer || cur_hue != last_hue ||
-                          cur_sat != last_sat || cur_val != last_val ||
-                          cur_enable != last_enable);
+    // レイヤーに応じて target_hue (色相) を自動決定
+    uint8_t target_hue = 170;
+    if (current_layer == 1) {
+        target_hue = 200; // 薄紫 (ラベンダー)
+    } else if (current_layer == 2) {
+        target_hue = 128; // シアン (水色)
+    }
 
-    if (state_changed) {
-        last_layer  = current_layer;
-        last_sat    = cur_sat;
-        last_val    = cur_val;
-        last_enable = cur_enable;
+    // 監視対象：レイヤー、ON/OFF状態、点灯個数(sat)、全体の明るさ(val)
+    uint16_t current_state = (current_layer << 12) | (rgblight_config.sat << 6) | (rgblight_config.val << 1) | rgblight_config.enable;
+    
+    static uint8_t scan_div = 0;
+    scan_div++;
 
-        // レイヤーに応じて hue (色相) を決定し、直接代入する
-        // QMK トランスポートが rgblight_config の変化を検知してスレーブに同期する
-        // rgblight_sethsv_noeeprom() を呼ばないことで全点灯フラッシュを完全回避
-        uint8_t target_hue = 170;
-        if (current_layer == 1) {
-            target_hue = 200; // 薄紫 (ラベンダー)
-        } else if (current_layer == 2) {
-            target_hue = 128; // シアン (水色)
-        }
-        rgblight_config.hue = target_hue;
-        last_hue = target_hue;
-
+    if (current_state != last_state || scan_div >= 10) {
+        last_state = current_state;
         scan_div = 0;
-        update_led_state();
-    } else {
-        // 変化がない場合でも定期的に update_led_state() を呼び出し
-        // QMK 同期受信後に全点灯になった状態を素早く部分点灯に戻す
-        scan_div++;
-        if (scan_div >= 20) {
-            scan_div = 0;
-            update_led_state();
+
+        // マスター側（USB接続側）でのみ、レイヤー変更を検知して同期（sethsv_noeeprom）を実行する
+        // 呼び出す前にクリッピングを一時的に0にして、マスター側での一瞬の全点灯も完全防止する
+        if (is_keyboard_master()) {
+            if (rgblight_config.hue != target_hue) {
+                rgblight_set_clipping_range(0, 0);
+                rgblight_set_effect_range(0, 0);
+                rgblight_sethsv_noeeprom(target_hue, rgblight_config.sat, rgblight_config.val);
+            }
         }
+
+        update_led_state();
     }
 #endif
 }
