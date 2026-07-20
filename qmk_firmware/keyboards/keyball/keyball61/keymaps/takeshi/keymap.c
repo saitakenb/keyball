@@ -194,23 +194,35 @@ void matrix_init_user(void) {
 
 void matrix_scan_user(void) {
 #ifdef RGBLIGHT_ENABLE
-    // スキャン50回に1回（約30〜40ms相当）、無条件で強制上書き実行
-    // これによりスレーブ側の全点灯上書きを肉眼で知覚できないレベルで即座に制限個数に引き戻す
-    static uint8_t scan_div = 0;
-    scan_div++;
-    if (scan_div >= 50) {
-        scan_div = 0;
-        
-        // レイヤーに応じて hue (色相) を自動決定し、同期する
-        uint8_t current_layer = get_highest_layer(layer_state);
+    // 定期的な強制送信を廃止し、状態変化があった時のみ同期パケットを送信する
+    // （定期的な rgblight_sethsv_noeeprom() の呼び出しが全点灯フラッシュを引き起こすため）
+    static uint8_t last_layer  = 0xFF;
+    static uint8_t last_sat    = 0xFF;
+    static uint8_t last_val    = 0xFF;
+    static uint8_t last_enable = 0xFF;
+
+    uint8_t current_layer = get_highest_layer(layer_state);
+    uint8_t cur_sat    = rgblight_config.sat;
+    uint8_t cur_val    = rgblight_config.val;
+    uint8_t cur_enable = rgblight_config.enable ? 1 : 0;
+
+    if (current_layer != last_layer || cur_sat != last_sat ||
+        cur_val != last_val || cur_enable != last_enable) {
+
+        last_layer  = current_layer;
+        last_sat    = cur_sat;
+        last_val    = cur_val;
+        last_enable = cur_enable;
+
+        // レイヤーに応じて hue (色相) を決定
         uint8_t target_hue = 170;
         if (current_layer == 1) {
             target_hue = 200; // 薄紫 (ラベンダー)
         } else if (current_layer == 2) {
             target_hue = 128; // シアン (水色)
         }
-        
-        // sat (点灯個数) と val (輝度) を維持したまま同期パケットを送信
+
+        // 変化があった場合のみ同期パケットを送信し、直後に部分点灯に修正する
         rgblight_sethsv_noeeprom(target_hue, rgblight_config.sat, rgblight_config.val);
         update_led_state();
     }
