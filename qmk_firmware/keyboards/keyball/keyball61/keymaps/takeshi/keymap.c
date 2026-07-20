@@ -74,7 +74,7 @@ void oledkit_render_info_user(void) {
     keyball_oled_render_ballinfo();
     keyball_oled_render_layerinfo();
 #ifdef RGBLIGHT_ENABLE
-    uint8_t count = rgblight_config.mode; // mode から個数を取得
+    uint8_t count = rgblight_config.sat; // sat から個数を取得
     if (count > 37) count = 8;
     oled_write_char(' ', false);
     oled_write_char('L', false);
@@ -126,9 +126,19 @@ bool get_is_left_hand_latched(void) {
 }
 
 void update_led_state(void) {
+    uint8_t current_layer = get_highest_layer(layer_state);
+
+    // 彩度(sat)はレイヤー状態からローカルで自律決定する（L0=0, L1=160, 他=255）
+    uint8_t sat_actual = 255;
+    if (current_layer == 1) {
+        sat_actual = 160; // 薄紫 (ラベンダー)
+    } else if (current_layer == 0) {
+        sat_actual = 0;   // レイヤー0は白
+    }
+
     LED_TYPE color_led;
-    // 明度(rgblight_config.val)をそのまま使用することで、全体の輝度調整機能が完全に機能します
-    sethsv(rgblight_config.hue, rgblight_config.sat, rgblight_config.val, &color_led);
+    // 明度(rgblight_config.val)と自律決定した彩度を使用して、全体の輝度調整が完全に機能する色を生成
+    sethsv(rgblight_config.hue, sat_actual, rgblight_config.val, &color_led);
 
     // 左右判定ラッチからLED総数を固定決定（L=37, R=34）
     bool is_left = get_is_left_hand_latched();
@@ -141,8 +151,8 @@ void update_led_state(void) {
 
     // RGBが有効なときのみ、対象範囲にカラーを設定する（無効なときは消灯データがそのまま出力される）
     if (rgblight_config.enable) {
-        // 点灯制限数を mode 変数 (0〜37) から取得
-        uint8_t limit = rgblight_config.mode;
+        // 点灯制限数を sat 変数 (0〜37) から取得
+        uint8_t limit = rgblight_config.sat;
         if (limit > 37) limit = 8; // デフォルト補正
 
         if (is_left) {
@@ -171,41 +181,37 @@ void update_led_state(void) {
 }
 #endif
 
+// 起動時にデフォルトの点灯個数を 8（親指全点灯）、モード1、白（レイヤー0）に設定する
 void matrix_init_user(void) {
 #ifdef RGBLIGHT_ENABLE
-    // 起動時にEEPROMの設定に依存せず、常にクリーンな初期状態（点灯数8、モード1、輝度ON）に強制リセットする
     rgblight_enable_noeeprom();
-    // 起動時のデフォルト点灯個数として mode = 8 を直接設定
-    rgblight_config.mode = 8;
-    // レイヤー0(白): hue=170, sat=0, val=127 (初期輝度50%)
-    rgblight_sethsv_noeeprom(170, 0, 127);
+    rgblight_mode_noeeprom(1);
+    // レイヤー0(白)初期状態: hue=170, sat=8 (点灯数8をsatに格納), val=127 (初期輝度50%)
+    rgblight_sethsv_noeeprom(170, 8, 127);
     update_led_state();
 #endif
 }
 
 void matrix_scan_user(void) {
 #ifdef RGBLIGHT_ENABLE
-    static uint16_t last_state = 0xFFFF;
-    uint8_t current_layer = get_highest_layer(layer_state);
-
-    // レイヤーに応じて hue (色相) と sat (彩度) を自動決定し、同期する
-    uint8_t target_hue = 170;
-    uint8_t target_sat = 255;
-    if (current_layer == 1) {
-        target_hue = 200; // 薄紫 (ラベンダー)
-        target_sat = 160;
-    } else if (current_layer == 2) {
-        target_hue = 128; // シアン (水色)
-    } else if (current_layer == 0) {
-        target_sat = 0;   // レイヤー0は白
-    }
-
-    // 現在の状態を監視（変更があった場合のみ同期をトリガー）
-    // mode (点灯個数) も監視対象に含める
-    uint16_t current_state = (current_layer << 8) | (rgblight_config.mode << 1) | rgblight_config.enable;
-    if (current_state != last_state) {
-        last_state = current_state;
-        rgblight_sethsv_noeeprom(target_hue, target_sat, rgblight_config.val);
+    // スキャン50回に1回（約30〜40ms相当）、無条件で強制上書き実行
+    // これによりスレーブ側の全点灯上書きを肉眼で知覚できないレベルで即座に制限個数に引き戻す
+    static uint8_t scan_div = 0;
+    scan_div++;
+    if (scan_div >= 50) {
+        scan_div = 0;
+        
+        // レイヤーに応じて hue (色相) を自動決定し、同期する
+        uint8_t current_layer = get_highest_layer(layer_state);
+        uint8_t target_hue = 170;
+        if (current_layer == 1) {
+            target_hue = 200; // 薄紫 (ラベンダー)
+        } else if (current_layer == 2) {
+            target_hue = 128; // シアン (水色)
+        }
+        
+        // sat (点灯個数) と val (輝度) を維持したまま同期パケットを送信
+        rgblight_sethsv_noeeprom(target_hue, rgblight_config.sat, rgblight_config.val);
         update_led_state();
     }
 #endif
@@ -215,15 +221,14 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
 #ifdef RGBLIGHT_ENABLE
     if (keycode == RGB_MOD || keycode == RGB_RMOD) {
         if (record->event.pressed) {
-            uint8_t count = rgblight_config.mode; // mode を点灯数として流用
+            uint8_t count = rgblight_config.sat; // sat を点灯数として流用
             if (count > 37) count = 8; // デフォルト補正
             
             if (keycode == RGB_MOD && count < 37) {
-                rgblight_config.mode = count + 1;
+                rgblight_sethsv_noeeprom(rgblight_config.hue, count + 1, rgblight_config.val);
             } else if (keycode == RGB_RMOD && count > 0) {
-                rgblight_config.mode = count - 1;
+                rgblight_sethsv_noeeprom(rgblight_config.hue, count - 1, rgblight_config.val);
             }
-            update_led_state(); // これにより同期がトリガーされる
         }
         return false;
     }
