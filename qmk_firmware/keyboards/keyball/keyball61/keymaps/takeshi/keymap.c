@@ -74,8 +74,11 @@ void oledkit_render_info_user(void) {
     keyball_oled_render_ballinfo();
     keyball_oled_render_layerinfo();
 #ifdef RGBLIGHT_ENABLE
-    uint8_t count = rgblight_config.mode;
-    oled_write_char('\n', false);
+    uint8_t count = rgblight_config.hue;
+    if (count > 37) count = 8;
+    oled_write_char(' ', false);
+    oled_write_char('L', false);
+    oled_write_char(':', false);
     oled_write_char((count / 10) + '0', false);
     oled_write_char((count % 10) + '0', false);
 #endif
@@ -176,10 +179,11 @@ void update_led_state(void) {
 
 void matrix_init_user(void) {
 #ifdef RGBLIGHT_ENABLE
-    // 起動時のデフォルト点灯個数として hue = 8 を設定し、同期させる
-    if (rgblight_config.hue > 37) {
-        rgblight_sethsv_noeeprom(8, rgblight_config.sat, rgblight_config.val);
-    }
+    // 起動時にEEPROMの設定に依存せず、常にクリーンな初期状態（点灯数8、モード1、輝度ON）に強制リセットする
+    rgblight_enable_noeeprom();
+    rgblight_mode_noeeprom(1);
+    rgblight_sethsv_noeeprom(8, 255, rgblight_config.val);
+    
     update_led_state();
 #endif
 }
