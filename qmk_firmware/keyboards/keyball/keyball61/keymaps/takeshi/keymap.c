@@ -101,6 +101,26 @@ combo_t key_combos[] = {
 #endif
 
 #ifdef RGBLIGHT_ENABLE
+// 起動時の初期化遅延を吸収し、確実に左右を固定・確定させるラッチ関数
+bool get_is_left_hand_latched(void) {
+    static bool has_determined = false;
+    static bool is_left_cached = true;
+    
+    if (!has_determined) {
+        if (keyball.this_have_ball) {
+            is_left_cached = false;
+            has_determined = true;
+        }
+        // 起動から3秒経過しても検出されなければ左手として確定
+        static uint16_t start_time = 0;
+        if (start_time == 0) start_time = timer_read();
+        if (timer_elapsed(start_time) > 3000) {
+            has_determined = true;
+        }
+    }
+    return is_left_cached;
+}
+
 void update_led_state(void) {
     if (!rgblight_config.enable) {
         return;
@@ -130,10 +150,11 @@ void update_led_state(void) {
         led[i] = (LED_TYPE){0, 0, 0};
     }
 
-    // 点灯制限数をモード変数 (0〜37) から取得
-    uint8_t limit = rgblight_config.mode;
+    // 点灯制限数を hue 変数 (0〜37) から取得
+    uint8_t limit = rgblight_config.hue;
+    if (limit > 37) limit = 8; // 初期値（境界外）の場合はデフォルト8個
 
-    if (!keyball.this_have_ball) {
+    if (get_is_left_hand_latched()) {
         // 左手側: 裏面親指（29..36, 8個）から順に点灯し、次に前面（0..28, 29個）を点灯
         for (uint8_t cnt = 0; cnt < limit; cnt++) {
             uint8_t idx = cnt - 8;
@@ -155,6 +176,10 @@ void update_led_state(void) {
 
 void matrix_init_user(void) {
 #ifdef RGBLIGHT_ENABLE
+    // 起動時のデフォルト点灯個数として hue = 8 を設定し、同期させる
+    if (rgblight_config.hue > 37) {
+        rgblight_sethsv_noeeprom(8, rgblight_config.sat, rgblight_config.val);
+    }
     update_led_state();
 #endif
 }
@@ -163,7 +188,7 @@ void matrix_scan_user(void) {
 #ifdef RGBLIGHT_ENABLE
     static uint16_t last_state = 0xFFFF;
     uint8_t current_layer = get_highest_layer(layer_state);
-    uint16_t current_state = (current_layer << 8) | (rgblight_config.mode << 1) | rgblight_config.enable;
+    uint16_t current_state = (current_layer << 8) | (rgblight_config.hue << 1) | rgblight_config.enable;
     if (current_state != last_state) {
         last_state = current_state;
         update_led_state();
@@ -175,10 +200,13 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
 #ifdef RGBLIGHT_ENABLE
     if (keycode == RGB_MOD || keycode == RGB_RMOD) {
         if (record->event.pressed) {
-            if (keycode == RGB_MOD && rgblight_config.mode < 37) {
-                rgblight_mode_noeeprom(rgblight_config.mode + 1);
-            } else if (keycode == RGB_RMOD && rgblight_config.mode > 0) {
-                rgblight_mode_noeeprom(rgblight_config.mode - 1);
+            uint8_t count = rgblight_config.hue;
+            if (count > 37) count = 8; // デフォルト補正
+            
+            if (keycode == RGB_MOD && count < 37) {
+                rgblight_sethsv_noeeprom(count + 1, rgblight_config.sat, rgblight_config.val);
+            } else if (keycode == RGB_RMOD && count > 0) {
+                rgblight_sethsv_noeeprom(count - 1, rgblight_config.sat, rgblight_config.val);
             }
         }
         return false;
