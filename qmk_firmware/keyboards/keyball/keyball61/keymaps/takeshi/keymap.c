@@ -194,37 +194,53 @@ void matrix_init_user(void) {
 
 void matrix_scan_user(void) {
 #ifdef RGBLIGHT_ENABLE
-    // 定期的な強制送信を廃止し、状態変化があった時のみ同期パケットを送信する
-    // （定期的な rgblight_sethsv_noeeprom() の呼び出しが全点灯フラッシュを引き起こすため）
+    // hue も含めた状態変化を検知し、変化時のみ hue を直接代入して同期する
+    // （rgblight_sethsv_noeeprom() は全点灯フラッシュを引き起こすため使用しない）
     static uint8_t last_layer  = 0xFF;
+    static uint8_t last_hue    = 0xFF;
     static uint8_t last_sat    = 0xFF;
     static uint8_t last_val    = 0xFF;
     static uint8_t last_enable = 0xFF;
+    static uint8_t scan_div    = 0;
 
     uint8_t current_layer = get_highest_layer(layer_state);
+    uint8_t cur_hue    = rgblight_config.hue;
     uint8_t cur_sat    = rgblight_config.sat;
     uint8_t cur_val    = rgblight_config.val;
     uint8_t cur_enable = rgblight_config.enable ? 1 : 0;
 
-    if (current_layer != last_layer || cur_sat != last_sat ||
-        cur_val != last_val || cur_enable != last_enable) {
+    bool state_changed = (current_layer != last_layer || cur_hue != last_hue ||
+                          cur_sat != last_sat || cur_val != last_val ||
+                          cur_enable != last_enable);
 
+    if (state_changed) {
         last_layer  = current_layer;
         last_sat    = cur_sat;
         last_val    = cur_val;
         last_enable = cur_enable;
 
-        // レイヤーに応じて hue (色相) を決定
+        // レイヤーに応じて hue (色相) を決定し、直接代入する
+        // QMK トランスポートが rgblight_config の変化を検知してスレーブに同期する
+        // rgblight_sethsv_noeeprom() を呼ばないことで全点灯フラッシュを完全回避
         uint8_t target_hue = 170;
         if (current_layer == 1) {
             target_hue = 200; // 薄紫 (ラベンダー)
         } else if (current_layer == 2) {
             target_hue = 128; // シアン (水色)
         }
+        rgblight_config.hue = target_hue;
+        last_hue = target_hue;
 
-        // 変化があった場合のみ同期パケットを送信し、直後に部分点灯に修正する
-        rgblight_sethsv_noeeprom(target_hue, rgblight_config.sat, rgblight_config.val);
+        scan_div = 0;
         update_led_state();
+    } else {
+        // 変化がない場合でも定期的に update_led_state() を呼び出し
+        // QMK 同期受信後に全点灯になった状態を素早く部分点灯に戻す
+        scan_div++;
+        if (scan_div >= 20) {
+            scan_div = 0;
+            update_led_state();
+        }
     }
 #endif
 }
@@ -235,12 +251,14 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
         if (record->event.pressed) {
             uint8_t count = rgblight_config.sat; // sat を点灯数として流用
             if (count > 37) count = 8; // デフォルト補正
-            
+
+            // sat に直接代入することで全点灯フラッシュを回避しつつスレーブにも同期される
             if (keycode == RGB_MOD && count < 37) {
-                rgblight_sethsv_noeeprom(rgblight_config.hue, count + 1, rgblight_config.val);
+                rgblight_config.sat = count + 1;
             } else if (keycode == RGB_RMOD && count > 0) {
-                rgblight_sethsv_noeeprom(rgblight_config.hue, count - 1, rgblight_config.val);
+                rgblight_config.sat = count - 1;
             }
+            update_led_state();
         }
         return false;
     }
