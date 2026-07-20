@@ -162,9 +162,14 @@ void update_led_state(void) {
     // 物理LEDに出力
     if (is_keyboard_master()) {
         // マスター側はQMK標準のAPIで出力（同時にスプリットトランスポートのトリガーを引く）
+        rgblight_set_clipping_range(0, num);
+        rgblight_set_effect_range(0, num);
         rgblight_set();
     } else {
-        // スレーブ側はQMKの制限や標準タスクの上書きを完全に迂回し、物理LEDへ直接強制出力する
+        // スレーブ側はQMK標準の描画・自動更新を完全にスルーさせるため、エフェクト範囲を (0, 0) に固定
+        rgblight_set_clipping_range(0, 0);
+        rgblight_set_effect_range(0, 0);
+        // 低レイヤドライバを直接呼び出して物理LEDへ部分点灯を強制出力する
         ws2812_setleds(led, num);
     }
 }
@@ -179,9 +184,14 @@ void matrix_init_user(void) {
     bool is_left = get_is_left_hand_latched();
     uint8_t num = is_left ? 37 : 34;
 
-    // クリッピングハックは完全に廃止し、常時最大数に固定
-    rgblight_set_clipping_range(0, num);
-    rgblight_set_effect_range(0, num);
+    // マスターは最大数、スレーブは (0, 0) で初期化して標準タスクの上書きを防ぐ
+    if (is_keyboard_master()) {
+        rgblight_set_clipping_range(0, num);
+        rgblight_set_effect_range(0, num);
+    } else {
+        rgblight_set_clipping_range(0, 0);
+        rgblight_set_effect_range(0, 0);
+    }
 
     // レイヤー0(白)初期状態: hue=170, sat=8 (点灯数8), val=127 (初期輝度50%)
     rgblight_config.hue = 170;
