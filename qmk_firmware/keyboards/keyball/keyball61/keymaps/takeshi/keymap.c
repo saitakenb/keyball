@@ -74,7 +74,7 @@ void oledkit_render_info_user(void) {
     keyball_oled_render_ballinfo();
     keyball_oled_render_layerinfo();
 #ifdef RGBLIGHT_ENABLE
-    uint8_t count = rgblight_config.hue;
+    uint8_t count = rgblight_config.mode; // mode から個数を取得
     if (count > 37) count = 8;
     oled_write_char(' ', false);
     oled_write_char('L', false);
@@ -126,24 +126,13 @@ bool get_is_left_hand_latched(void) {
 }
 
 void update_led_state(void) {
-    uint8_t current_layer = get_highest_layer(layer_state);
-
-    // レイヤー配色定義（識別性向上版）
-    uint8_t hue = 170; 
-    uint8_t sat = 255;
-    if (current_layer == 1) {
-        hue = 200; // 薄紫 (ラベンダー)
-        sat = 160;
-    } else if (current_layer == 2) {
-        hue = 128; // シアン (水色)
-    } else if (current_layer == 0) {
-        sat = 0;   // レイヤー0は白
-    }
-
     LED_TYPE color_led;
-    sethsv(hue, sat, rgblight_config.val, &color_led);
+    // 明度(rgblight_config.val)をそのまま使用することで、全体の輝度調整機能が完全に機能します
+    sethsv(rgblight_config.hue, rgblight_config.sat, rgblight_config.val, &color_led);
 
-    uint8_t num = rgblight_ranges.clipping_num_leds;
+    // 左右判定ラッチからLED総数を固定決定（L=37, R=34）
+    bool is_left = get_is_left_hand_latched();
+    uint8_t num = is_left ? 37 : 34;
 
     // 全LEDを消灯クリア
     for (uint8_t i = 0; i < num; i++) {
@@ -152,11 +141,11 @@ void update_led_state(void) {
 
     // RGBが有効なときのみ、対象範囲にカラーを設定する（無効なときは消灯データがそのまま出力される）
     if (rgblight_config.enable) {
-        // 点灯制限数を hue 変数 (0〜37) から取得
-        uint8_t limit = rgblight_config.hue;
+        // 点灯制限数を mode 変数 (0〜37) から取得
+        uint8_t limit = rgblight_config.mode;
         if (limit > 37) limit = 8; // デフォルト補正
 
-        if (get_is_left_hand_latched()) {
+        if (is_left) {
             // 左手側: 裏面親指（29..36, 8個）から順に点灯し、次に前面（0..28, 29個）を点灯
             for (uint8_t cnt = 0; cnt < limit; cnt++) {
                 uint8_t idx = cnt - 8;
@@ -186,9 +175,10 @@ void matrix_init_user(void) {
 #ifdef RGBLIGHT_ENABLE
     // 起動時にEEPROMの設定に依存せず、常にクリーンな初期状態（点灯数8、モード1、輝度ON）に強制リセットする
     rgblight_enable_noeeprom();
-    rgblight_mode_noeeprom(1);
-    rgblight_sethsv_noeeprom(8, 255, rgblight_config.val);
-    
+    // 起動時のデフォルト点灯個数として mode = 8 を直接設定
+    rgblight_config.mode = 8;
+    // レイヤー0(白): hue=170, sat=0, val=127 (初期輝度50%)
+    rgblight_sethsv_noeeprom(170, 0, 127);
     update_led_state();
 #endif
 }
@@ -197,9 +187,25 @@ void matrix_scan_user(void) {
 #ifdef RGBLIGHT_ENABLE
     static uint16_t last_state = 0xFFFF;
     uint8_t current_layer = get_highest_layer(layer_state);
-    uint16_t current_state = (current_layer << 8) | (rgblight_config.hue << 1) | rgblight_config.enable;
+
+    // レイヤーに応じて hue (色相) と sat (彩度) を自動決定し、同期する
+    uint8_t target_hue = 170;
+    uint8_t target_sat = 255;
+    if (current_layer == 1) {
+        target_hue = 200; // 薄紫 (ラベンダー)
+        target_sat = 160;
+    } else if (current_layer == 2) {
+        target_hue = 128; // シアン (水色)
+    } else if (current_layer == 0) {
+        target_sat = 0;   // レイヤー0は白
+    }
+
+    // 現在の状態を監視（変更があった場合のみ同期をトリガー）
+    // mode (点灯個数) も監視対象に含める
+    uint16_t current_state = (current_layer << 8) | (rgblight_config.mode << 1) | rgblight_config.enable;
     if (current_state != last_state) {
         last_state = current_state;
+        rgblight_sethsv_noeeprom(target_hue, target_sat, rgblight_config.val);
         update_led_state();
     }
 #endif
@@ -209,14 +215,15 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
 #ifdef RGBLIGHT_ENABLE
     if (keycode == RGB_MOD || keycode == RGB_RMOD) {
         if (record->event.pressed) {
-            uint8_t count = rgblight_config.hue;
+            uint8_t count = rgblight_config.mode; // mode を点灯数として流用
             if (count > 37) count = 8; // デフォルト補正
             
             if (keycode == RGB_MOD && count < 37) {
-                rgblight_sethsv_noeeprom(count + 1, rgblight_config.sat, rgblight_config.val);
+                rgblight_config.mode = count + 1;
             } else if (keycode == RGB_RMOD && count > 0) {
-                rgblight_sethsv_noeeprom(count - 1, rgblight_config.sat, rgblight_config.val);
+                rgblight_config.mode = count - 1;
             }
+            update_led_state(); // これにより同期がトリガーされる
         }
         return false;
     }
