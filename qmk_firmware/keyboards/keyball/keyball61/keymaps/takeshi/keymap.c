@@ -105,8 +105,10 @@ combo_t key_combos[] = {
 
 #ifdef RGBLIGHT_ENABLE
 extern rgblight_status_t rgblight_status;
+// 低レイヤの物理LED出力関数を宣言
+extern void ws2812_setleds(LED_TYPE *ledarray, uint16_t number_of_leds);
 
-// QMK標準の左右判定APIを使用（スレーブ側でも100%正しく動作します）
+// QMK標準の左右判定APIを使用（スレーブ側でも100%正確に動作します）
 bool get_is_left_hand_latched(void) {
     return is_keyboard_left();
 }
@@ -128,10 +130,6 @@ void update_led_state(void) {
 
     bool is_left = get_is_left_hand_latched();
     uint8_t num = is_left ? 37 : 34;
-
-    // スレーブ側の上書きを防ぐため、描画する瞬間だけクリッピング範囲を最大にする
-    rgblight_set_clipping_range(0, num);
-    rgblight_set_effect_range(0, num);
 
     // 全LEDを消灯クリア
     for (uint8_t i = 0; i < num; i++) {
@@ -162,14 +160,12 @@ void update_led_state(void) {
     }
 
     // 物理LEDに出力
-    rgblight_set();
-
-    // 出力完了後、スレーブ側の場合はクリッピング範囲を (0, 0) にリセットし、
-    // バックグラウンドの標準タスクによる全点灯上書きを完全に防御する。
-    // マスター側は同期パケットの送信を維持するため、最大数のままにしておく。
-    if (!is_keyboard_master()) {
-        rgblight_set_clipping_range(0, 0);
-        rgblight_set_effect_range(0, 0);
+    if (is_keyboard_master()) {
+        // マスター側はQMK標準のAPIで出力（同時にスプリットトランスポートのトリガーを引く）
+        rgblight_set();
+    } else {
+        // スレーブ側はQMKの制限や標準タスクの上書きを完全に迂回し、物理LEDへ直接強制出力する
+        ws2812_setleds(led, num);
     }
 }
 #endif
@@ -183,14 +179,9 @@ void matrix_init_user(void) {
     bool is_left = get_is_left_hand_latched();
     uint8_t num = is_left ? 37 : 34;
 
-    // マスターは最大数、スレーブは (0, 0) で初期化して上書きを防ぐ
-    if (is_keyboard_master()) {
-        rgblight_set_clipping_range(0, num);
-        rgblight_set_effect_range(0, num);
-    } else {
-        rgblight_set_clipping_range(0, 0);
-        rgblight_set_effect_range(0, 0);
-    }
+    // クリッピングハックは完全に廃止し、常時最大数に固定
+    rgblight_set_clipping_range(0, num);
+    rgblight_set_effect_range(0, num);
 
     // レイヤー0(白)初期状態: hue=170, sat=8 (点灯数8), val=127 (初期輝度50%)
     rgblight_config.hue = 170;
