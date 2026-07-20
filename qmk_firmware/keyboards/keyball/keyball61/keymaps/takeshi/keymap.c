@@ -106,9 +106,9 @@ combo_t key_combos[] = {
 #ifdef RGBLIGHT_ENABLE
 extern rgblight_status_t rgblight_status;
 
-// Keyballが物理的に検出したボールの有無から、左右を100%確実に特定する
+// QMK標準の左右判定APIを使用（スレーブ側でも100%正しく動作します）
 bool get_is_left_hand_latched(void) {
-    return !keyball.this_have_ball;
+    return is_keyboard_left();
 }
 
 void update_led_state(void) {
