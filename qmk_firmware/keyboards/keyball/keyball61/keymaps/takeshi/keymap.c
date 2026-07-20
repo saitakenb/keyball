@@ -111,9 +111,27 @@ extern void ws2812_setleds(LED_TYPE *ledarray, uint16_t number_of_leds);
 // マスター側の本来のRGBオン/OFF状態を退避するグローバル静的変数
 static bool real_enable = false;
 
-// QMK標準の左右判定APIを使用（スレーブ側でも100%正確に動作します）
+// 知見集バグ③対策：不安定なタイマーやピン状態を排除し、スキャン回数とSPIの検出に基づいて決定論的に特定する
 bool get_is_left_hand_latched(void) {
-    return is_keyboard_left();
+    static bool has_determined = false;
+    static bool is_left_cached = true;
+    
+    if (!has_determined) {
+        // keyball.this_have_ball は起動後数スキャンで SPI 検出により確定する
+        if (keyball.this_have_ball) {
+            is_left_cached = false; // ボールあり＝右手
+            has_determined = true;
+        }
+        static uint16_t scan_count = 0;
+        if (scan_count < 5000) {
+            scan_count++;
+        } else {
+            // 5000スキャン（約2〜3秒）経過してもボールが検出されなければ、左手（ボールなし）と確定
+            is_left_cached = true;
+            has_determined = true;
+        }
+    }
+    return is_left_cached;
 }
 
 void update_led_state(void) {
@@ -222,10 +240,12 @@ void matrix_scan_user(void) {
             real_enable = true;
             rgblight_config.enable = 0;
         }
-    } else {
-        real_enable = rgblight_config.enable;
+        // 知見集バグ④対策：スレーブ側は状態変化やscan_div制限を完全にスルーし、無条件・毎スキャンで物理出力を強制実行する
+        update_led_state();
+        return;
     }
 
+    real_enable = rgblight_config.enable;
     uint8_t current_layer = get_highest_layer(layer_state);
 
     // レイヤーに応じて target_hue (色相) を自動決定
