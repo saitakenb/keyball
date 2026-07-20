@@ -104,7 +104,7 @@ combo_t key_combos[] = {
 #endif
 
 #ifdef RGBLIGHT_ENABLE
-// 起動時の初期化遅延を吸収し、確実に左右を固定・確定させるラッチ関数
+// タイマー割り込みに依存せず、スキャンループ回数で決定論的にタイムアウトする左右ラッチ関数
 bool get_is_left_hand_latched(void) {
     static bool has_determined = false;
     static bool is_left_cached = true;
@@ -114,10 +114,11 @@ bool get_is_left_hand_latched(void) {
             is_left_cached = false;
             has_determined = true;
         }
-        // 起動から3秒経過しても検出されなければ左手として確定
-        static uint16_t start_time = 0;
-        if (start_time == 0) start_time = timer_read();
-        if (timer_elapsed(start_time) > 3000) {
+        // スキャンが 5000 回実行されたら左手として確定 (タイマー競合対策)
+        static uint16_t scan_count = 0;
+        if (scan_count < 5000) {
+            scan_count++;
+        } else {
             has_determined = true;
         }
     }
@@ -125,10 +126,6 @@ bool get_is_left_hand_latched(void) {
 }
 
 void update_led_state(void) {
-    if (!rgblight_config.enable) {
-        return;
-    }
-
     uint8_t current_layer = get_highest_layer(layer_state);
 
     // レイヤー配色定義（識別性向上版）
@@ -153,26 +150,30 @@ void update_led_state(void) {
         led[i] = (LED_TYPE){0, 0, 0};
     }
 
-    // 点灯制限数を hue 変数 (0〜37) から取得
-    uint8_t limit = rgblight_config.hue;
-    if (limit > 37) limit = 8; // 初期値（境界外）の場合はデフォルト8個
+    // RGBが有効なときのみ、対象範囲にカラーを設定する（無効なときは消灯データがそのまま出力される）
+    if (rgblight_config.enable) {
+        // 点灯制限数を hue 変数 (0〜37) から取得
+        uint8_t limit = rgblight_config.hue;
+        if (limit > 37) limit = 8; // デフォルト補正
 
-    if (get_is_left_hand_latched()) {
-        // 左手側: 裏面親指（29..36, 8個）から順に点灯し、次に前面（0..28, 29個）を点灯
-        for (uint8_t cnt = 0; cnt < limit; cnt++) {
-            uint8_t idx = cnt - 8;
-            if (cnt < 8) {
-                idx = cnt + 29;
+        if (get_is_left_hand_latched()) {
+            // 左手側: 裏面親指（29..36, 8個）から順に点灯し、次に前面（0..28, 29個）を点灯
+            for (uint8_t cnt = 0; cnt < limit; cnt++) {
+                uint8_t idx = cnt - 8;
+                if (cnt < 8) {
+                    idx = cnt + 29;
+                }
+                if (idx < num) led[idx] = color_led;
             }
-            if (idx < num) led[idx] = color_led;
-        }
-    } else {
-        // 右手側: 裏面親指（0..6, 7個）から順に点灯し、次に前面（7..33, 27個）を点灯
-        for (uint8_t cnt = 0; cnt < limit; cnt++) {
-            if (cnt < num) led[cnt] = color_led;
+        } else {
+            // 右手側: 裏面親指（0..6, 7個）から順に点灯し、次に前面（7..33, 27個）を点灯
+            for (uint8_t cnt = 0; cnt < limit; cnt++) {
+                if (cnt < num) led[cnt] = color_led;
+            }
         }
     }
 
+    // 常に物理LEDに上書き書き出しすることで、居残るデフォルトの赤点灯を完全に排除する
     rgblight_set();
 }
 #endif
