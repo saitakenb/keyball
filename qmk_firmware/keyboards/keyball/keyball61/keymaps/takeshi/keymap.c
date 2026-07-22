@@ -106,13 +106,12 @@ combo_t key_combos[] = {
 #ifdef RGBLIGHT_ENABLE
 extern rgblight_status_t rgblight_status;
 
-// 知見集バグ③対策：不安定なタイマーやピン状態を排除し、スキャン回数とSPIの検出に基づいて決定論的に特定する
+// 知見集バグ③対策：左右ラッチ判定
 bool get_is_left_hand_latched(void) {
     static bool has_determined = false;
     static bool is_left_cached = true;
     
     if (!has_determined) {
-        // keyball.this_have_ball は起動後数スキャンで SPI 検出により確定する
         if (keyball.this_have_ball) {
             is_left_cached = false; // ボールあり＝右手
             has_determined = true;
@@ -121,7 +120,6 @@ bool get_is_left_hand_latched(void) {
         if (scan_count < 5000) {
             scan_count++;
         } else {
-            // 5000スキャン（約2〜3秒）経過してもボールが検出されなければ、左手（ボールなし）と確定
             is_left_cached = true;
             has_determined = true;
         }
@@ -129,9 +127,13 @@ bool get_is_left_hand_latched(void) {
     return is_left_cached;
 }
 
-// LED描画処理（マスター側専用。スレーブ側はQMK標準の同期とクリッピングに処理を委ねる）
-void update_led_state(void) {
-    if (!is_keyboard_master()) return;
+// QMK標準の物理出力をオーバーライドし、送信直前に強制的に部分点灯・消灯バッファに書き換える！！！
+// これにより、マスター/スレーブの全点灯上書き競合や、同期受信時の全点灯フラッシュが100%完全に解消します。
+void rgblight_call_driver(LED_TYPE *start_led, uint8_t num_leds) {
+    bool is_left = get_is_left_hand_latched();
+    uint8_t num = is_left ? 37 : 34;
+
+    if (num_leds > num) num_leds = num;
 
     uint8_t current_layer = get_highest_layer(layer_state);
 
@@ -144,24 +146,15 @@ void update_led_state(void) {
     }
 
     LED_TYPE color_led;
-    // 明度(rgblight_config.val)と自律決定した彩度を使用して色を生成
     sethsv(rgblight_config.hue, sat_actual, rgblight_config.val, &color_led);
 
-    bool is_left = get_is_left_hand_latched();
-    uint8_t num = is_left ? 37 : 34;
-
-    // マスター側は同期パケットの送信経路を確保するため、常にクリッピング範囲を最大数に固定する
-    rgblight_set_clipping_range(0, num);
-    rgblight_set_effect_range(0, num);
-
-    // 全LEDを消灯クリア
-    for (uint8_t i = 0; i < num; i++) {
-        led[i] = (LED_TYPE){0, 0, 0};
+    // 全バッファを消灯クリア
+    for (uint8_t i = 0; i < num_leds; i++) {
+        start_led[i] = (LED_TYPE){0, 0, 0};
     }
 
-    // RGBが有効なときのみ、対象範囲にカラーを設定する
+    // RGBがオンのときのみ部分点灯を設定
     if (rgblight_config.enable) {
-        // 点灯制限数を sat 変数 (0〜37) から取得
         uint8_t limit = rgblight_config.sat;
         if (limit > 37) limit = 8; // デフォルト補正
 
@@ -172,18 +165,18 @@ void update_led_state(void) {
                 if (cnt < 8) {
                     idx = cnt + 29;
                 }
-                if (idx < num) led[idx] = color_led;
+                if (idx < num_leds) start_led[idx] = color_led;
             }
         } else {
             // 右手側: 裏面親指（0..6, 7個）から順に点灯し、次に前面（7..33, 27個）を点灯
             for (uint8_t cnt = 0; cnt < limit; cnt++) {
-                if (cnt < num) led[cnt] = color_led;
+                if (cnt < num_leds) start_led[cnt] = color_led;
             }
         }
     }
 
-    // 物理LEDに出力
-    rgblight_set();
+    // 物理LEDに送信（割り込みセーフな安全なタイミング）
+    ws2812_setleds(start_led, num_leds);
 }
 #endif
 
@@ -196,42 +189,27 @@ void matrix_init_user(void) {
     bool is_left = get_is_left_hand_latched();
     uint8_t num = is_left ? 37 : 34;
 
+    // クリッピング範囲・エフェクト範囲は常に最大数に固定
+    rgblight_set_clipping_range(0, num);
+    rgblight_set_effect_range(0, num);
+
     // レイヤー0(白)初期状態: hue=170, sat=8 (点灯数8), val=127 (初期輝度50%)
     rgblight_config.hue = 170;
     rgblight_config.sat = 8;
     rgblight_config.val = 127;
     
     if (is_keyboard_master()) {
-        rgblight_set_clipping_range(0, num);
-        rgblight_set_effect_range(0, num);
         rgblight_status.change_flags |= RGBLIGHT_STATUS_CHANGE_HSVS;
-        update_led_state();
-    } else {
-        // スレーブ側は、初期状態のクリッピングを受信初期値（sat=8）に設定して全点灯を防ぐ
-        rgblight_set_clipping_range(0, 8);
-        rgblight_set_effect_range(0, 8);
+        rgblight_set(); // 物理出力トリガー
     }
 #endif
 }
 
 void matrix_scan_user(void) {
 #ifdef RGBLIGHT_ENABLE
-    // スレーブ側（!is_keyboard_master()）の処理
-    if (!is_keyboard_master()) {
-        static uint8_t last_slave_sat = 0xFF;
-        uint8_t slave_sat = rgblight_config.sat;
-        if (slave_sat > 37) slave_sat = 8;
-        
-        // 同期された点灯個数（sat）が変わったときだけ、クリッピング範囲を安全に更新（物理出力は同期ハンドラが自動実行）
-        if (slave_sat != last_slave_sat) {
-            last_slave_sat = slave_sat;
-            rgblight_set_clipping_range(0, slave_sat);
-            rgblight_set_effect_range(0, slave_sat);
-        }
-        return; // スレーブはここで処理を抜ける（割り込みによる波形破壊を100%防止）
-    }
+    // スレーブ側は何も行わない（標準同期処理のみに委ねる）
+    if (!is_keyboard_master()) return;
 
-    // マスター側（is_keyboard_master()）の処理
     static uint16_t last_state = 0xFFFF;
     uint8_t current_layer = get_highest_layer(layer_state);
 
@@ -253,15 +231,13 @@ void matrix_scan_user(void) {
         last_state = current_state;
         scan_div = 0;
 
-        // マスター側でのみ、レイヤー変更を検知して同期フラグを立てる（フラッシュ完全防止）
-        if (is_keyboard_master()) {
-            if (rgblight_config.hue != target_hue) {
-                rgblight_config.hue = target_hue;
-                rgblight_status.change_flags |= RGBLIGHT_STATUS_CHANGE_HSVS;
-            }
+        // 色相変更を検知して同期フラグを立てる（フラッシュ完全防止）
+        if (rgblight_config.hue != target_hue) {
+            rgblight_config.hue = target_hue;
+            rgblight_status.change_flags |= RGBLIGHT_STATUS_CHANGE_HSVS;
         }
 
-        update_led_state();
+        rgblight_set(); // 物理出力トリガー
     }
 #endif
 }
@@ -284,7 +260,7 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
             rgblight_config.sat = new_count;
             rgblight_status.change_flags |= RGBLIGHT_STATUS_CHANGE_HSVS;
 
-            update_led_state();
+            rgblight_set(); // 物理出力トリガー
         }
         return false;
     }
